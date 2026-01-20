@@ -16,8 +16,8 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     [Header("Playback Source (JSON Asset)")]
     public TextAsset clipAsset;
 
-    [Header("Pivot (Anchor for Recording/Playback)")]
-    public Transform pivot;
+    [Header("Playback Source (JSON Asset)")]
+    public TextAsset clipAsset;
 
     [Header("Recording")]
     [Min(1)] public int recordEveryNFixedSteps = 1;
@@ -75,6 +75,14 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
 
     private float playTime;
     private int playFrameIndex;
+
+    private Vector3 playbackPositionOffset;
+    private Quaternion playbackRotationOffset;
+    private bool hasPlaybackOffset;
+    private int referenceBodyIndex = -1;
+
+    private Vector3[] playbackPositionOffsets;
+    private Quaternion[] playbackRotationOffsets;
 
     private Dictionary<Rigidbody, IForceRecordSource> sourceByBody;
     private bool[] prevUseGravity;
@@ -184,12 +192,6 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
             return;
         }
 
-        if (!pivot)
-        {
-            Debug.LogError("[Recorder] No pivot assigned. Set Pivot in the inspector.");
-            return;
-        }
-
         if (clip.frames[0].samples == null || clip.frames[0].samples.Length != bodies.Length)
         {
             Debug.LogError("[Recorder] Clip sample count does not match bodies.");
@@ -197,6 +199,24 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
         }
 
         BuildForceSourceMap();
+
+        playbackPositionOffsets = new Vector3[bodies.Length];
+        playbackRotationOffsets = new Quaternion[bodies.Length];
+        Frame startFrame = clip.frames[0];
+        for (int i = 0; i < bodies.Length; i++)
+        {
+            Rigidbody body = bodies[i];
+            if (!body)
+            {
+                playbackPositionOffsets[i] = Vector3.zero;
+                playbackRotationOffsets[i] = Quaternion.identity;
+                continue;
+            }
+
+            BodySample startSample = startFrame.samples[i];
+            playbackPositionOffsets[i] = body.position - startSample.pos;
+            playbackRotationOffsets[i] = body.rotation * Quaternion.Inverse(startSample.rot);
+        }
 
         playTime = 0f;
         playFrameIndex = 0;
@@ -313,6 +333,17 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
         float span = Mathf.Max(0.000001f, b.t - a.t);
         float t01 = Mathf.Clamp01((playTime - a.t) / span);
 
+        if (!hasPlaybackOffset || referenceBodyIndex < 0)
+            return;
+
+        BodySample refA = a.samples[referenceBodyIndex];
+        BodySample refB = b.samples[referenceBodyIndex];
+        Vector3 refPos = Vector3.Lerp(refA.pos, refB.pos, t01);
+        Quaternion refRot = Quaternion.Slerp(refA.rot, refB.rot, t01);
+
+        Vector3 mappedRefPos = playbackPositionOffset + (playbackRotationOffset * refPos);
+        Quaternion mappedRefRot = playbackRotationOffset * refRot;
+
         for (int i = 0; i < bodies.Length; i++)
         {
             Rigidbody body = bodies[i];
@@ -326,10 +357,27 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
             Vector3 vel = Vector3.Lerp(sa.vel, sb.vel, t01);
             Vector3 angVel = Vector3.Lerp(sa.angVel, sb.angVel, t01);
 
-            pos = pivot.TransformPoint(pos);
-            rot = pivot.rotation * rot;
-            vel = pivot.TransformDirection(vel);
-            angVel = pivot.TransformDirection(angVel);
+            if (i == referenceBodyIndex)
+            {
+                pos = mappedRefPos;
+                rot = mappedRefRot;
+            }
+            else
+            {
+                Vector3 relPos = Quaternion.Inverse(refRot) * (pos - refPos);
+                Quaternion relRot = Quaternion.Inverse(refRot) * rot;
+                pos = mappedRefPos + (mappedRefRot * relPos);
+                rot = mappedRefRot * relRot;
+            }
+
+            vel = playbackRotationOffset * vel;
+            angVel = playbackRotationOffset * angVel;
+
+            if (playbackPositionOffsets != null && playbackPositionOffsets.Length > i)
+                pos += playbackPositionOffsets[i];
+
+            if (playbackRotationOffsets != null && playbackRotationOffsets.Length > i)
+                rot = playbackRotationOffsets[i] * rot;
 
             if (applyRecordedForces && sa.hasApplied && sb.hasApplied)
             {
