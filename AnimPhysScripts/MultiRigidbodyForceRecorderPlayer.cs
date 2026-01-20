@@ -100,6 +100,12 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
             return;
         }
 
+        if (!pivot)
+        {
+            Debug.LogError("Recorder: No pivot assigned. Set Pivot in the inspector.");
+            return;
+        }
+
         BuildForceSourceMap();
 
         framesBuffer.Clear();
@@ -291,10 +297,10 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
 
             var s = new BodySample
             {
-                pos = b.position,
-                rot = b.rotation,
-                vel = b.velocity,
-                angVel = b.angularVelocity,
+                pos = pivot.InverseTransformPoint(b.position),
+                rot = Quaternion.Inverse(pivot.rotation) * b.rotation,
+                vel = pivot.InverseTransformDirection(b.velocity),
+                angVel = pivot.InverseTransformDirection(b.angularVelocity),
                 hasApplied = false
             };
 
