@@ -13,8 +13,6 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     public string fileName = "phys_clip.json";
     public bool overwriteFile = true;
 
-    [Header("Playback Source (JSON Asset)")]
-    public TextAsset clipAsset;
 
     [Header("Playback Source (JSON Asset)")]
     public TextAsset clipAsset;
@@ -441,3 +439,4 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
         }
     }
 }
+
