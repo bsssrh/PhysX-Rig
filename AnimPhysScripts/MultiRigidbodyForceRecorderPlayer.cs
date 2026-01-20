@@ -13,6 +13,9 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     public string fileName = "phys_clip.json";
     public bool overwriteFile = true;
 
+    [Header("Playback Source (JSON Asset)")]
+    public TextAsset clipAsset;
+
     [Header("Recording")]
     [Min(1)] public int recordEveryNFixedSteps = 1;
 
@@ -69,6 +72,10 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
 
     private float playTime;
     private int playFrameIndex;
+
+    private Vector3 playbackPositionOffset;
+    private Quaternion playbackRotationOffset;
+    private bool hasPlaybackOffset;
 
     private Dictionary<Rigidbody, IForceRecordSource> sourceByBody;
     private bool[] prevUseGravity;
@@ -143,15 +150,15 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     [ContextMenu("▶▶ Play From File")]
     public void StartPlayFromFile()
     {
-        if (!File.Exists(FullPath))
+        if (!clipAsset)
         {
-            Debug.LogError($"[Recorder] File not found: {FullPath}");
+            Debug.LogError("[Recorder] No JSON clip assigned. Set Clip Asset in the инспектор.");
             return;
         }
 
         try
         {
-            string json = File.ReadAllText(FullPath);
+            string json = clipAsset.text;
             clip = JsonUtility.FromJson<Clip>(json);
         }
         catch (Exception e)
@@ -166,7 +173,39 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
             return;
         }
 
+        if (bodies == null || bodies.Length == 0)
+        {
+            Debug.LogError("[Recorder] No Rigidbody bodies assigned.");
+            return;
+        }
+
+        if (clip.frames[0].samples == null || clip.frames[0].samples.Length != bodies.Length)
+        {
+            Debug.LogError("[Recorder] Clip sample count does not match bodies.");
+            return;
+        }
+
         BuildForceSourceMap();
+
+        hasPlaybackOffset = false;
+        Frame startFrame = clip.frames[0];
+        for (int i = 0; i < bodies.Length; i++)
+        {
+            Rigidbody body = bodies[i];
+            if (!body) continue;
+
+            BodySample startSample = startFrame.samples[i];
+            playbackRotationOffset = body.rotation * Quaternion.Inverse(startSample.rot);
+            playbackPositionOffset = body.position - (playbackRotationOffset * startSample.pos);
+            hasPlaybackOffset = true;
+            break;
+        }
+
+        if (!hasPlaybackOffset)
+        {
+            Debug.LogError("[Recorder] No valid Rigidbody bodies found for playback offset.");
+            return;
+        }
 
         playTime = 0f;
         playFrameIndex = 0;
@@ -186,7 +225,7 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
         }
 
         if (logState)
-            Debug.Log($"[Recorder] PLAY START → {FullPath}");
+            Debug.Log("[Recorder] PLAY START → JSON Clip Asset");
     }
 
     [ContextMenu("⏹ Stop Playback")]
@@ -295,6 +334,12 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
             Quaternion rot = Quaternion.Slerp(sa.rot, sb.rot, t01);
             Vector3 vel = Vector3.Lerp(sa.vel, sb.vel, t01);
             Vector3 angVel = Vector3.Lerp(sa.angVel, sb.angVel, t01);
+
+            if (hasPlaybackOffset)
+            {
+                pos = playbackPositionOffset + (playbackRotationOffset * pos);
+                rot = playbackRotationOffset * rot;
+            }
 
             if (applyRecordedForces && sa.hasApplied && sb.hasApplied)
             {
