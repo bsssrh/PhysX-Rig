@@ -9,6 +9,9 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     [Header("Bodies to Record / Play (ONLY Rigidbody parts)")]
     public Rigidbody[] bodies;
 
+    [Header("Recording Pivot (local reference space)")]
+    public Transform pivot;
+
     [Header("File (saved to Downloads)")]
     public string fileName = "phys_clip.json";
     public bool overwriteFile = true;
