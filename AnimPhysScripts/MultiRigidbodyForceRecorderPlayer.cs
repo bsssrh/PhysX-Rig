@@ -16,6 +16,9 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     [Header("Playback Source (JSON Asset)")]
     public TextAsset clipAsset;
 
+    [Header("Playback Source (JSON Asset)")]
+    public TextAsset clipAsset;
+
     [Header("Recording")]
     [Min(1)] public int recordEveryNFixedSteps = 1;
 
@@ -77,6 +80,9 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     private Quaternion playbackRotationOffset;
     private bool hasPlaybackOffset;
     private int referenceBodyIndex = -1;
+
+    private Vector3[] playbackPositionOffsets;
+    private Quaternion[] playbackRotationOffsets;
 
     private Dictionary<Rigidbody, IForceRecordSource> sourceByBody;
     private bool[] prevUseGravity;
@@ -188,26 +194,22 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
 
         BuildForceSourceMap();
 
-        hasPlaybackOffset = false;
-        referenceBodyIndex = -1;
+        playbackPositionOffsets = new Vector3[bodies.Length];
+        playbackRotationOffsets = new Quaternion[bodies.Length];
         Frame startFrame = clip.frames[0];
         for (int i = 0; i < bodies.Length; i++)
         {
             Rigidbody body = bodies[i];
-            if (!body) continue;
+            if (!body)
+            {
+                playbackPositionOffsets[i] = Vector3.zero;
+                playbackRotationOffsets[i] = Quaternion.identity;
+                continue;
+            }
 
             BodySample startSample = startFrame.samples[i];
-            playbackRotationOffset = body.rotation * Quaternion.Inverse(startSample.rot);
-            playbackPositionOffset = body.position - (playbackRotationOffset * startSample.pos);
-            hasPlaybackOffset = true;
-            referenceBodyIndex = i;
-            break;
-        }
-
-        if (!hasPlaybackOffset)
-        {
-            Debug.LogError("[Recorder] No valid Rigidbody bodies found for playback offset.");
-            return;
+            playbackPositionOffsets[i] = body.position - startSample.pos;
+            playbackRotationOffsets[i] = body.rotation * Quaternion.Inverse(startSample.rot);
         }
 
         playTime = 0f;
@@ -364,6 +366,12 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
 
             vel = playbackRotationOffset * vel;
             angVel = playbackRotationOffset * angVel;
+
+            if (playbackPositionOffsets != null && playbackPositionOffsets.Length > i)
+                pos += playbackPositionOffsets[i];
+
+            if (playbackRotationOffsets != null && playbackRotationOffsets.Length > i)
+                rot = playbackRotationOffsets[i] * rot;
 
             if (applyRecordedForces && sa.hasApplied && sb.hasApplied)
             {
