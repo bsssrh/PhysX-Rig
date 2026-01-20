@@ -16,6 +16,9 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
     [Header("Playback Source (JSON Asset)")]
     public TextAsset clipAsset;
 
+    [Header("Playback Source (JSON Asset)")]
+    public TextAsset clipAsset;
+
     [Header("Recording")]
     [Min(1)] public int recordEveryNFixedSteps = 1;
 
@@ -72,6 +75,11 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
 
     private float playTime;
     private int playFrameIndex;
+
+    private Vector3 playbackPositionOffset;
+    private Quaternion playbackRotationOffset;
+    private bool hasPlaybackOffset;
+    private int referenceBodyIndex = -1;
 
     private Vector3[] playbackPositionOffsets;
     private Quaternion[] playbackRotationOffsets;
@@ -319,6 +327,17 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
         float span = Mathf.Max(0.000001f, b.t - a.t);
         float t01 = Mathf.Clamp01((playTime - a.t) / span);
 
+        if (!hasPlaybackOffset || referenceBodyIndex < 0)
+            return;
+
+        BodySample refA = a.samples[referenceBodyIndex];
+        BodySample refB = b.samples[referenceBodyIndex];
+        Vector3 refPos = Vector3.Lerp(refA.pos, refB.pos, t01);
+        Quaternion refRot = Quaternion.Slerp(refA.rot, refB.rot, t01);
+
+        Vector3 mappedRefPos = playbackPositionOffset + (playbackRotationOffset * refPos);
+        Quaternion mappedRefRot = playbackRotationOffset * refRot;
+
         for (int i = 0; i < bodies.Length; i++)
         {
             Rigidbody body = bodies[i];
@@ -331,6 +350,22 @@ public class MultiRigidbodyForceRecorderPlayer : MonoBehaviour
             Quaternion rot = Quaternion.Slerp(sa.rot, sb.rot, t01);
             Vector3 vel = Vector3.Lerp(sa.vel, sb.vel, t01);
             Vector3 angVel = Vector3.Lerp(sa.angVel, sb.angVel, t01);
+
+            if (i == referenceBodyIndex)
+            {
+                pos = mappedRefPos;
+                rot = mappedRefRot;
+            }
+            else
+            {
+                Vector3 relPos = Quaternion.Inverse(refRot) * (pos - refPos);
+                Quaternion relRot = Quaternion.Inverse(refRot) * rot;
+                pos = mappedRefPos + (mappedRefRot * relPos);
+                rot = mappedRefRot * relRot;
+            }
+
+            vel = playbackRotationOffset * vel;
+            angVel = playbackRotationOffset * angVel;
 
             if (playbackPositionOffsets != null && playbackPositionOffsets.Length > i)
                 pos += playbackPositionOffsets[i];
